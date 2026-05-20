@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多图合成文档 - 图片转 Word 工具</title>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; background: linear-gradient(135deg, #e8edf5 0%, #f0f2f5 50%, #eef1f8 100%); color: #333; min-height: 100vh; }
+.container { max-width: 920px; margin: 0 auto; padding: 30px 20px; }
+.header { text-align: center; padding: 36px 0 28px; }
+.header .logo { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.header .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #1a3c6e, #2a5a9e); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(26,60,110,.25); }
+.header .logo-icon svg { width: 22px; height: 22px; fill: #fff; }
+.header h1 { font-size: 26px; color: #1a3c6e; letter-spacing: 1px; font-weight: 700; }
+.header .subtitle { color: #7a8aa0; margin-top: 6px; font-size: 14px; background: rgba(26,60,110,.06); display: inline-block; padding: 4px 18px; border-radius: 20px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06), 0 2px 24px rgba(26,60,110,.06); padding: 28px; margin-bottom: 22px; border: 1px solid rgba(255,255,255,.8); transition: box-shadow .25s; }
+.card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08), 0 4px 32px rgba(26,60,110,.08); }
+.card h2 { font-size: 16px; color: #1a3c6e; margin-bottom: 18px; padding-left: 14px; border-left: 3px solid #2a5a9e; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.card h2 .step-num { display: inline-flex; width: 22px; height: 22px; background: #1a3c6e; color: #fff; border-radius: 50%; font-size: 12px; align-items: center; justify-content: center; flex-shrink: 0; }
+.drop-zone { border: 2px dashed #c8d0de; border-radius: 12px; padding: 44px 20px 40px; text-align: center; cursor: pointer; transition: all .25s; background: #f8f9fc; }
+.drop-zone:hover, .drop-zone.dragover { border-color: #2a5a9e; background: #eef3fb; transform: translateY(-1px); }
+.drop-zone .icon-wrap { width: 56px; height: 56px; margin: 0 auto 14px; background: #e8eff8; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background .25s; }
+.drop-zone:hover .icon-wrap { background: #d6e3f5; }
+.drop-zone .icon-wrap svg { width: 26px; height: 26px; fill: #1a3c6e; }
+.drop-zone .text { color: #444; font-size: 15px; font-weight: 500; }
+.drop-zone .sub { color: #999; font-size: 12px; margin-top: 8px; }
+.drop-zone input[type="file"] { display: none; }
+.image-list { margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.image-item { display: flex; flex-direction: column; align-items: center; padding: 14px; border: 1px solid #e8eaed; border-radius: 10px; background: #fafbfc; transition: border-color .2s, box-shadow .2s; position: relative; }
+.image-item:hover { border-color: #d0d5dd; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+.image-item .thumb { width: 100%; height: 150px; object-fit: contain; border-radius: 6px; background: #eef1f5; margin-bottom: 8px; cursor: grab; }
+.image-item .thumb:active { cursor: grabbing; }
+.image-item .info { text-align: center; width: 100%; margin-bottom: 8px; }
+.image-item .name { font-size: 12px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-item .size { font-size: 11px; color: #999; margin-top: 2px; }
+.image-item input { width: 100%; padding: 6px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 14px; outline: none; transition: border-color .2s, box-shadow .2s; text-align: center; box-sizing: border-box; }
+.image-item input:focus { border-color: #2a5a9e; box-shadow: 0 0 0 3px rgba(42,90,158,.1); }
+.image-item .remove-btn { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border: none; border-radius: 50%; background: rgba(220,38,38,.8); color: #fff; cursor: pointer; font-size: 14px; line-height: 24px; text-align: center; display: none; opacity: 0; transition: opacity .2s, transform .2s; transform: scale(.8); }
+.image-item:hover .remove-btn { opacity: 1; display: block; transform: scale(1); }
+.image-item .remove-btn:hover { background: #dc2626; }
+.image-item .order-badge { position: absolute; top: 6px; left: 6px; background: linear-gradient(135deg, #1a3c6e, #2a5a9e); color: #fff; font-size: 11px; width: 22px; height: 22px; border-radius: 50%; text-align: center; line-height: 22px; font-weight: 600; box-shadow: 0 1px 4px rgba(26,60,110,.2); }
+.image-item.dragging { opacity: .35; }
+.image-item.drag-over { border-color: #2a5a9e; box-shadow: 0 0 0 2px rgba(42,90,158,.25); }
+.sort-hint { font-size: 12px; color: #9aa6b8; text-align: center; margin-bottom: 12px; display: none; }
+.sort-hint.show { display: block; }
+.btn-area { text-align: center; padding: 8px 0 4px; }
+.btn-generate { background: linear-gradient(135deg, #1a3c6e, #2a5a9e); color: #fff; border: none; border-radius: 8px; padding: 14px 52px; font-size: 16px; cursor: pointer; transition: all .25s; letter-spacing: 1px; font-weight: 500; box-shadow: 0 4px 14px rgba(26,60,110,.25); }
+.btn-generate:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(26,60,110,.35); }
+.btn-generate:active { transform: translateY(0); }
+.btn-generate:disabled { background: #b0b8c4; box-shadow: none; cursor: not-allowed; transform: none; }
+.btn-generate .spinner { display: none; vertical-align: middle; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; margin-right: 8px; }
+.btn-generate.loading .spinner { display: inline-block; }
+.btn-generate.loading .label { opacity: .7; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #fff; border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.15); padding: 16px 28px; font-size: 14px; z-index: 999; display: none; min-width: 300px; text-align: center; border: 1px solid rgba(0,0,0,.04); }
+.toast.show { display: block; animation: fadeIn .35s ease; }
+.toast.error { border-left: 4px solid #e53e3e; }
+.toast.success { border-left: 4px solid #38a169; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-12px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+.empty-hint { text-align: center; color: #9aa6b8; padding: 40px 0; font-size: 14px; }
+.batch-bar { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 14px; background: #f5f7fa; border-radius: 8px; }
+.batch-bar label { font-size: 13px; color: #555; white-space: nowrap; }
+.batch-bar input { flex: 1; padding: 5px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 13px; outline: none; max-width: 240px; }
+.batch-bar input:focus { border-color: #2a5a9e; box-shadow: 0 0 0 3px rgba(42,90,158,.1); }
+.batch-bar .btn-apply { padding: 5px 16px; background: #e8edf4; border: 1px solid #d0d5dd; border-radius: 6px; cursor: pointer; font-size: 12px; color: #444; transition: background .15s; }
+.batch-bar .btn-apply:hover { background: #dce2ec; }
+.stats { text-align: center; margin-top: 10px; font-size: 13px; color: #7a8aa0; }
+.suffix-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 14px; background: #f5f7fa; border-radius: 8px; }
+.suffix-bar label { font-size: 13px; color: #555; white-space: nowrap; font-weight: 500; }
+.suffix-bar input { flex: 1; padding: 6px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 14px; outline: none; max-width: 200px; }
+.suffix-bar input:focus { border-color: #2a5a9e; box-shadow: 0 0 0 3px rgba(42,90,158,.1); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M8 12h8v2H8zm0 4h5v2H8zm0-8h3v2H8z"/></svg>
+      </div>
+    </div>
+    <h1>多图合成文档</h1>
+    <div class="subtitle">可用于公示公告等场景 · A4 · 每页两张 · 自动适配</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">1</span> 上传图片</h2>
+    <div class="drop-zone" id="dropZone">
+      <div class="icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/><path d="M12 11v4h-2v-4H8l4-4 4 4h-2z"/></svg>
+      </div>
+      <div class="text">点击或拖拽图片到此处</div>
+      <div class="sub">支持 JPG / PNG / BMP / GIF / TIFF</div>
+      <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/bmp,image/gif,image/tiff,image/webp">
+    </div>
+    <div id="imageList" class="image-list"></div>
+    <div class="batch-bar" id="batchBar" style="display:none">
+      <label>批量填写区域名：</label>
+      <input type="text" id="batchRegion" placeholder="如：丰顺县">
+      <button class="btn-apply" id="btnBatchApply">应用到全部</button>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">2</span> 确认并生成</h2>
+    <div class="suffix-bar">
+      <label>图名后缀：</label>
+      <input type="text" id="suffixInput" value="公示张贴" placeholder="如：公示张贴">
+      <span style="font-size:12px;color:#999;">最终格式：<strong id="suffixPreview" style="color:#1a3c6e;">区域名+公示张贴</strong></span>
+    </div>
+    <div class="suffix-bar">
+      <label>输出文件名：</label>
+      <input type="text" id="fileNameInput" value="公示张贴" placeholder="如：公示张贴">
+      <span style="font-size:12px;color:#999;">自动添加 .docx</span>
+    </div>
+    <p style="font-size:13px;color:#666;margin-bottom:16px;">每页两张，自动适配页面</p>
+    <div class="btn-area">
+      <button class="btn-generate" id="btnGenerate" disabled>
+        <span class="spinner"></span>
+        <span class="label" id="btnLabel">生成 Word 文档</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const docxLib = window.docx;
+  if (!docxLib) {
+    document.getElementById('toast').textContent = '错误：docx 库加载失败，请检查网络连接后刷新页面';
+    document.getElementById('toast').className = 'toast show error';
+    return;
+  }
+
+  const { Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, PageBreak } = docxLib;
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const imageList = document.getElementById('imageList');
+  const stats = document.getElementById('stats');
+  const batchBar = document.getElementById('batchBar');
+  const batchRegion = document.getElementById('batchRegion');
+  const btnBatchApply = document.getElementById('btnBatchApply');
+  const suffixInput = document.getElementById('suffixInput');
+  const suffixPreview = document.getElementById('suffixPreview');
+  const fileNameInput = document.getElementById('fileNameInput');
+  const btnLabel = document.getElementById('btnLabel');
+  const btnGenerate = document.getElementById('btnGenerate');
+  const toast = document.getElementById('toast');
+
+  const items = [];
+  let isGenerating = false;
+
+  function showToast(msg, type) {
+    toast.textContent = msg;
+    toast.className = 'toast show ' + (type || '');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.className = 'toast'; }, 3000);
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + 'B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
+    return (bytes / 1048576).toFixed(1) + 'MB';
+  }
+
+  function getImageType(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    const map = { jpg: 'jpeg', jpeg: 'jpeg', png: 'png', bmp: 'bmp', gif: 'gif', webp: 'png' };
+    return map[ext] || 'png';
+  }
+
+  function renderList() {
+    if (items.length === 0) {
+      imageList.innerHTML = '<div class="empty-hint">暂无图片，请上传</div>';
+      batchBar.style.display = 'none';
+      stats.textContent = '';
+      btnGenerate.disabled = true;
+      document.querySelector('.sort-hint')?.classList.remove('show');
+      return;
+    }
+
+    const hint = document.querySelector('.sort-hint') || (() => {
+      const el = document.createElement('div'); el.className = 'sort-hint'; el.textContent = '↕ 拖拽卡片可调整顺序'; batchBar.parentNode.insertBefore(el, batchBar); return el;
+    })();
+    hint.classList.add('show');
+
+    let html = '';
+    items.forEach((item, i) => {
+      html += '<div class="image-item" data-index="' + i + '">'
+        + '<span class="order-badge">' + (i + 1) + '</span>'
+        + '<img class="thumb" src="' + item.thumbUrl + '" alt="" draggable="true">'
+        + '<div class="info"><div class="name">' + escapeHtml(item.file.name) + '</div><div class="size">' + formatSize(item.file.size) + '</div></div>'
+        + '<input type="text" class="region-input" placeholder="输入区域名" value="' + escapeHtml(item.region) + '">'
+        + '<button class="remove-btn" data-index="' + i + '" title="移除">\u00D7</button>'
+        + '</div>';
+    });
+    imageList.innerHTML = html;
+
+    imageList.querySelectorAll('.region-input').forEach((input, i) => {
+      input.addEventListener('input', () => { items[i].region = input.value.trim(); });
+    });
+
+    imageList.querySelectorAll('.remove-btn').forEach((btn) => {
+      btn.style.display = 'block';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index);
+        items.splice(idx, 1);
+        renderList();
+      });
+    });
+
+    initDragSort();
+
+    batchBar.style.display = 'flex';
+    stats.textContent = '共 ' + items.length + ' 张图片，将生成 ' + Math.ceil(items.length / 2) + ' 页';
+    btnGenerate.disabled = false;
+  }
+
+  function initDragSort() {
+    const thumbs = imageList.querySelectorAll('.thumb');
+    const cards = imageList.querySelectorAll('.image-item');
+    let dragSrc = -1;
+
+    thumbs.forEach(thumb => {
+      thumb.addEventListener('dragstart', (e) => {
+        const card = thumb.closest('.image-item');
+        dragSrc = parseInt(card.dataset.index);
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(dragSrc));
+      });
+
+      thumb.addEventListener('dragend', () => {
+        thumb.closest('.image-item').classList.remove('dragging');
+        cards.forEach(c => c.classList.remove('drag-over'));
+      });
+    });
+
+    cards.forEach(card => {
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        cards.forEach(c => c.classList.remove('drag-over'));
+        if (parseInt(card.dataset.index) !== dragSrc) card.classList.add('drag-over');
+      });
+
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drag-over');
+      });
+
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const targetIdx = parseInt(card.dataset.index);
+        if (dragSrc >= 0 && dragSrc !== targetIdx) {
+          const [moved] = items.splice(dragSrc, 1);
+          items.splice(targetIdx, 0, moved);
+          renderList();
+        }
+        cards.forEach(c => c.classList.remove('drag-over'));
+      });
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function addFiles(files) {
+    const validTypes = ['image/jpeg', 'image/png', 'image/bmp', 'image/gif', 'image/tiff', 'image/webp'];
+    for (const file of files) {
+      if (!validTypes.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|bmp|gif|tiff|tif|webp)$/i)) continue;
+      if (items.some(ex => ex.file.name === file.name && ex.file.size === file.size)) continue;
+      const thumbUrl = URL.createObjectURL(file);
+      items.push({ file, thumbUrl, region: '' });
+    }
+    renderList();
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); addFiles(e.dataTransfer.files); });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+
+  btnBatchApply.addEventListener('click', () => {
+    const val = batchRegion.value.trim();
+    items.forEach(item => { item.region = val; });
+    renderList();
+    const inputs = imageList.querySelectorAll('.region-input');
+    inputs.forEach(inp => inp.value = val);
+  });
+
+  batchRegion.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnBatchApply.click();
+  });
+
+  function getSuffix() { return suffixInput.value.trim() || '公示张贴'; }
+  function getFileName() { return fileNameInput.value.trim() || getSuffix(); }
+  function updatePreview() {
+    suffixPreview.textContent = '区域名+' + getSuffix();
+    btnLabel.textContent = '生成 ' + getFileName() + '.docx';
+  }
+  suffixInput.addEventListener('input', updatePreview);
+  fileNameInput.addEventListener('input', updatePreview);
+  updatePreview();
+
+  btnGenerate.addEventListener('click', generateDocx);
+
+  async function generateDocx() {
+    if (isGenerating || items.length === 0) return;
+    isGenerating = true;
+    btnGenerate.disabled = true;
+    btnGenerate.classList.add('loading');
+
+    try {
+      const pageData = [];
+
+      for (const item of items) {
+        const ab = await item.file.arrayBuffer();
+        const data = new Uint8Array(ab);
+        const imgType = getImageType(item.file.name);
+
+        const dim = await getImageDimensions(item.thumbUrl);
+
+        pageData.push({
+          data,
+          imgType,
+          naturalWidth: dim.width,
+          naturalHeight: dim.height,
+          region: item.region,
+          fileName: item.file.name
+        });
+      }
+
+      const A4_W = 11906;
+      const A4_H = 16838;
+      const MARGIN = 1440;
+      const usableW = A4_W - 2 * MARGIN;
+      const usableH = A4_H - 2 * MARGIN;
+
+      const tableW = usableW;
+      const cellPadH = 80;
+      const cellPadV = 80;
+
+      const borderNone = { style: BorderStyle.NONE, size: 0 };
+      const borders = { top: borderNone, bottom: borderNone, left: borderNone, right: borderNone };
+
+      const children = [];
+      const pageCount = Math.ceil(pageData.length / 2);
+
+      const DPI = 96;
+      function calcImgSize(pi, slotCount) {
+        const cellInnerW = usableW - 2 * cellPadH;
+        const cellInnerPx = Math.round(cellInnerW * DPI / 1440);
+        let w = Math.round(cellInnerPx * 0.9);
+        const aspect = pi.naturalWidth / pi.naturalHeight;
+        let h = Math.round(w / aspect);
+        const slotDXA = (usableH - 2 * cellPadV) / slotCount - 60;
+        const slotPx = Math.round(slotDXA * DPI / 1440);
+        const maxH = Math.round(slotPx * 0.85);
+        if (h > maxH) { h = maxH; w = Math.round(h * aspect); }
+        return { w, h };
+      }
+
+      for (let p = 0; p < pageCount; p++) {
+        const idx = p * 2;
+        const pair = [pageData[idx]];
+        if (idx + 1 < pageData.length) pair.push(pageData[idx + 1]);
+
+        if (pair.length === 1) {
+          const pi = pair[0];
+          const { h } = calcImgSize(pi, 1);
+          const imgDXA = Math.round(h * 1440 / DPI);
+          const capDXA = 60;
+          const content = imgDXA + capDXA;
+          const space = Math.max(0, Math.round(((usableH - 2 * cellPadV) - content) / 3));
+          if (space > 20) {
+            children.push(new Paragraph({
+              spacing: { before: 0, after: space },
+              children: [new TextRun({ text: '', size: 1 })]
+            }));
+          }
+        }
+
+        const rows = [];
+        for (let r = 0; r < pair.length; r++) {
+          const pi = pair[r];
+          const suffix = getSuffix();
+          const caption = pi.region ? pi.region + suffix : suffix;
+          const { w: imgW, h: imgH } = calcImgSize(pi, pair.length);
+
+          rows.push(new TableRow({
+            children: [new TableCell({
+              width: { size: tableW, type: WidthType.DXA },
+              verticalAlign: VerticalAlign.CENTER,
+              borders,
+              margins: { top: cellPadV, bottom: cellPadV, left: cellPadH, right: cellPadH },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 0, after: 40 },
+                  children: [new ImageRun({
+                    data: pi.data,
+                    type: pi.imgType,
+                    transformation: { width: imgW, height: imgH },
+                    altText: { title: pi.fileName, description: caption, name: pi.fileName }
+                  })]
+                }),
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 40, after: 0 },
+                  children: [new TextRun({ text: caption, bold: false, size: 28, font: '\u5B8B\u4F53' })]
+                })
+              ]
+            })]
+          }));
+        }
+
+        children.push(new Table({
+          width: { size: tableW, type: WidthType.DXA },
+          columnWidths: [tableW],
+          rows
+        }));
+
+        if (p < pageCount - 1) {
+          children.push(new Paragraph({ children: [new PageBreak()] }));
+        }
+      }
+
+      const doc = new Document({
+        styles: {
+          default: { document: { run: { font: '宋体', size: 22 } } }
+        },
+        sections: [{
+          properties: {
+            page: {
+              size: { width: A4_W, height: A4_H },
+              margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN }
+            }
+          },
+          children
+        }]
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const outName = getFileName() + '.docx';
+      a.download = outName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('生成成功！已下载：' + outName, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('生成失败：' + (err.message || err), 'error');
+    } finally {
+      isGenerating = false;
+      btnGenerate.disabled = false;
+      btnGenerate.classList.remove('loading');
+    }
+  }
+
+  function getImageDimensions(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => reject(new Error('无法读取图片尺寸'));
+      img.src = url;
+    });
+  }
+
+  renderList();
+})();
+</script>
+</body>
+</html>
