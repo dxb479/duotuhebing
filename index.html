@@ -198,6 +198,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
       <select id="layoutSelect">
         <option value="1">1 张</option>
         <option value="2" selected>2 张</option>
+        <option value="3">3 张</option>
         <option value="4">4 张（2×2）</option>
       </select>
       <span class="hint" id="layoutHint">每页 2 张，竖向排列</span>
@@ -332,7 +333,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
 
   layoutSelect.addEventListener('change', () => {
     const v = parseInt(layoutSelect.value);
-    const hints = { 1: '每页 1 张，纵向居中', 2: '每页 2 张，竖向排列', 4: '每页 4 张，2×2 网格' };
+    const hints = { 1: '每页 1 张，纵向居中', 2: '每页 2 张，竖向排列', 3: '每页 3 张，竖向排列', 4: '每页 4 张，2×2 网格' };
     layoutHint.textContent = hints[v] || '';
     updatePreviewLabel();
   });
@@ -861,7 +862,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
 
   function updatePreviewLabel() {
     const layout = parseInt(layoutSelect.value);
-    const mode = layout === 1 ? '1张' : layout === 4 ? '4张(2×2)' : '2张';
+    const mode = layout === 1 ? '1张' : layout === 3 ? '3张' : layout === 4 ? '4张(2×2)' : '2张';
     const suf = getSuffix();
     const numLbl = getNumberingLabel();
     const posLbl = getPosLabel();
@@ -1036,7 +1037,9 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
       function makeCell(pi, cellW) {
         const idx = imgGlobalIndex++;
         const caption = buildCaption(pi.region, idx);
-        const { w, h } = calcImgSize(pi, layout === 4 ? 2 : layout, layout === 4 ? 2 : 1);
+        const slots = layout === 4 ? 2 : layout;
+        const cols = layout === 4 ? 2 : 1;
+        const { w, h } = calcImgSize(pi, slots, cols);
         return new TableCell({
           width: { size: Math.round(cellW), type: WidthType.DXA },
           verticalAlign: VerticalAlign.CENTER,
@@ -1118,24 +1121,55 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
           const pair = [pageData[idx]];
           if (idx + 1 < pageData.length) pair.push(pageData[idx + 1]);
 
-          if (pair.length === 1) {
-            const pi = pair[0];
-            const { h } = calcImgSize(pi, 1, 1);
-            const imgDXA = Math.round(h * 1440 / DPI);
-            const capDXA = 60;
-            const content = imgDXA + capDXA;
-            const space = Math.max(0, Math.round(((usableH - 2 * cellPadV) - content) / 3));
-            if (space > 20) {
-              children.push(new Paragraph({
-                spacing: { before: 0, after: space },
-                children: [new TextRun({ text: '', size: 1 })]
-              }));
-            }
-          }
-
           const rows = pair.map(pi => {
             const caption = buildCaption(pi.region, imgGlobalIndex++);
             const { w, h } = calcImgSize(pi, pair.length, 1);
+            return new TableRow({
+              children: [new TableCell({
+                width: { size: tableW, type: WidthType.DXA },
+                verticalAlign: VerticalAlign.CENTER,
+                borders,
+                margins: { top: cellPadV, bottom: cellPadV, left: cellPadH, right: cellPadH },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 0, after: 40 },
+                    children: [new ImageRun({
+                      data: pi.data,
+                      type: pi.imgType,
+                      transformation: { width: w, height: h },
+                      altText: { title: pi.fileName, description: caption, name: pi.fileName }
+                    })]
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { before: 40, after: 0 },
+                    children: [new TextRun({ text: caption, bold: false, size: 28, font: '\u5B8B\u4F53' })]
+                  })
+                ]
+              })]
+            });
+          });
+
+          children.push(new Table({
+            width: { size: tableW, type: WidthType.DXA },
+            columnWidths: [tableW],
+            rows
+          }));
+
+          if (p < pageCount - 1) {
+            children.push(new Paragraph({ children: [new PageBreak()] }));
+          }
+        }
+      } else if (layout === 3) {
+        const pageCount = Math.ceil(pageData.length / 3);
+        for (let p = 0; p < pageCount; p++) {
+          const idx = p * 3;
+          const triple = pageData.slice(idx, idx + 3);
+
+          const rows = triple.map(pi => {
+            const caption = buildCaption(pi.region, imgGlobalIndex++);
+            const { w, h } = calcImgSize(pi, 3, 1);
             return new TableRow({
               children: [new TableCell({
                 width: { size: tableW, type: WidthType.DXA },
