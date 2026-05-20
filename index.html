@@ -1629,6 +1629,28 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
       });
     }
 
+    function captureMergeSheetStates() {
+      const states = {};
+      document.querySelectorAll('.merge-file-item[data-index]').forEach(el => {
+        const fi = parseInt(el.dataset.index);
+        const list = document.querySelector('.merge-sheet-list[data-file-index="' + fi + '"]');
+        if (!list) return;
+        states[fi] = [];
+        list.querySelectorAll('.merge-sheet-item').forEach(sheetEl => {
+          const cb = sheetEl.querySelector('.merge-sheet-cb');
+          const nameInput = sheetEl.querySelector('.merge-sheet-name');
+          if (cb) {
+            states[fi].push({
+              sheetName: cb.dataset.sheet,
+              checked: cb.checked,
+              customName: nameInput ? nameInput.value : ''
+            });
+          }
+        });
+      });
+      return states;
+    }
+
     function saveMergeState() {
       const filesData = mergeFiles.map(f => ({
         name: f.file.name,
@@ -1637,7 +1659,8 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
       saveExcelState({
         mode: 'merge',
         outputFolder: outputFolderInput.value,
-        mergeFiles: filesData
+        mergeFiles: filesData,
+        mergeSheetStates: captureMergeSheetStates()
       });
     }
 
@@ -1660,7 +1683,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
           const wb = XLSX.read(buf, { type: 'array' });
           mergeFiles.push({ file: new File([buf], mf.name), wb, _data: buf });
         }
-        renderMergeList();
+        renderMergeList(state.mergeSheetStates);
       }
     }
 
@@ -2001,7 +2024,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
       saveMergeState();
     }
 
-    function renderMergeList() {
+    function renderMergeList(savedStates) {
       if (mergeFiles.length === 0) {
         mergeInfo.innerHTML = '';
         mergeFileListEl.innerHTML = '';
@@ -2026,9 +2049,13 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
           + '</div>'
           + '<div class="merge-sheet-list" data-file-index="' + i + '">';
         item.wb.SheetNames.forEach((sName, si) => {
-          html += '<div class="merge-sheet-item">'
-            + '<input type="checkbox" class="merge-sheet-cb" data-file-index="' + i + '" data-sheet="' + sName.replace(/"/g, '&quot;') + '" checked>'
-            + '<span>' + sName + '</span>'
+          const saved = savedStates && savedStates[i] ? savedStates[i].find(s => s.sheetName === sName) : null;
+          const checked = saved ? saved.checked : true;
+          const defaultName = saved ? saved.customName : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
+          html += '<div class="merge-sheet-item" style="flex-wrap:wrap;gap:4px;">'
+            + '<input type="checkbox" class="merge-sheet-cb" data-file-index="' + i + '" data-sheet="' + sName.replace(/"/g, '&quot;') + '" ' + (checked ? 'checked' : '') + '>'
+            + '<span style="font-size:12px;min-width:60px;">' + sName + '</span>'
+            + '<input type="text" class="merge-sheet-name" value="' + defaultName.replace(/"/g, '&quot;') + '" style="flex:1;min-width:120px;padding:2px 6px;border:1px solid #d0d5dd;border-radius:3px;font-size:11px;outline:none;">'
             + '</div>';
         });
         html += '</div>';
@@ -2125,8 +2152,8 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
           const item = mergeFiles[fileIdx];
           if (!item) continue;
           const ws = item.wb.Sheets[sName];
-          const prefix = item.file.name.replace(/\.(xlsx|xls)$/i, '');
-          const newName = prefix + '_' + sName;
+          const nameInput = cb.closest('.merge-sheet-item').querySelector('.merge-sheet-name');
+          const newName = nameInput ? nameInput.value.trim() || (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName) : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
           XLSX.utils.book_append_sheet(mergedWB, ws, newName);
         }
         const outData = XLSX.write(mergedWB, { type: 'array', bookType: 'xlsx' });
