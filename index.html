@@ -337,7 +337,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
     <div class="btn-area">
       <button class="btn-generate" id="btnGenerate" disabled>
         <span class="spinner"></span>
-        <span class="label" id="btnLabel">生成 Word 文档</span>
+        <span class="label" id="btnLabel">生成</span>
       </button>
     </div>
   </div>
@@ -408,6 +408,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
     </div>
 
   </div>
+
   </div>
 </div>
 
@@ -1138,8 +1139,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
     } else {
       suffixPreview.textContent = '行政区+' + suf;
     }
-    const fn = getFileName();
-    btnLabel.textContent = '生成 ' + fn + '.docx（每页' + mode + '）';
+    btnLabel.textContent = '生成';
   }
   suffixInput.addEventListener('input', updatePreviewLabel);
   fileNameInput.addEventListener('input', updatePreviewLabel);
@@ -1761,13 +1761,11 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
         list.querySelectorAll('.merge-sheet-item').forEach(sheetEl => {
           const cb = sheetEl.querySelector('.split-sheet-cb');
           const nameInput = sheetEl.querySelector('.split-out-name');
-          if (cb && nameInput) {
-            states[fi].push({
-              sheetIndex: parseInt(cb.dataset.fileIndex),
-              checked: cb.checked,
-              customName: nameInput.value
-            });
-          }
+          states[fi].push({
+            sheetIndex: parseInt(cb.dataset.sheetIndex),
+            checked: cb.checked,
+            customName: nameInput ? nameInput.value : ''
+          });
         });
       });
       return states;
@@ -1950,6 +1948,7 @@ body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
     });
 
 async function handleSplitFiles(files) {
+      let added = 0;
       for (const file of files) {
         if (!file.name.match(/\.(xlsx|xls)$/i)) continue;
         try {
@@ -1993,14 +1992,13 @@ async function handleSplitFiles(files) {
           + '</div>'
           + '<div class="merge-sheet-list" data-file-index="' + fi + '">';
         item.wb.SheetNames.forEach((sName, si) => {
-          const defaultOut = fname + '_' + sName + '.xlsx';
           const saved = savedStates && savedStates[fi] ? savedStates[fi].find(s => s.sheetIndex === si) : null;
           const checked = saved ? saved.checked : true;
-          const val = saved ? saved.customName : defaultOut;
+          const defaultName = saved ? saved.customName : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
           html += '<div class="merge-sheet-item" style="flex-wrap:wrap;gap:4px;">'
             + '<input type="checkbox" class="split-sheet-cb" data-file-index="' + fi + '" data-sheet-index="' + si + '" data-sheet="' + sName.replace(/"/g, '&quot;') + '" ' + (checked ? 'checked' : '') + '>'
             + '<span style="font-size:12px;min-width:60px;">' + sName + '</span>'
-            + '<input type="text" class="split-out-name" value="' + val.replace(/"/g, '&quot;') + '" style="flex:1;min-width:120px;padding:2px 6px;border:1px solid #d0d5dd;border-radius:3px;font-size:11px;outline:none;">'
+            + '<input type="text" class="split-out-name" maxlength="31" value="' + defaultName.replace(/"/g, '&quot;') + '" style="flex:1;min-width:120px;padding:2px 6px;border:1px solid #d0d5dd;border-radius:3px;font-size:11px;outline:none;">'
             + '</div>';
         });
         html += '</div>';
@@ -2015,16 +2013,16 @@ async function handleSplitFiles(files) {
         saveSplitState();
       });
 
-      // 展开/收起
-      document.querySelectorAll('.merge-expand-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const i = parseInt(btn.dataset.index);
-          const list = document.querySelector('.merge-sheet-list[data-file-index="' + i + '"]');
-          if (list) {
-            list.classList.toggle('open');
-            btn.classList.toggle('open');
-          }
-        });
+      // 展开/收起（事件委托）
+      sheetListEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.merge-expand-btn');
+        if (!btn) return;
+        const i = btn.dataset.index;
+        const list = sheetListEl.querySelector('.merge-sheet-list[data-file-index="' + i + '"]');
+        if (list) {
+          list.classList.toggle('open');
+          btn.classList.toggle('open');
+        }
       });
 
       // 删除文件
@@ -2049,7 +2047,7 @@ async function handleSplitFiles(files) {
             splitSheetAnchors[fi] = idx;
           } else {
             e.preventDefault();
-            cbs.forEach((c, i) => c.checked = i === idx && !cur);
+            cbs[idx].checked = !cur;
             splitSheetAnchors[fi] = idx;
           }
           saveSplitState();
@@ -2058,9 +2056,7 @@ async function handleSplitFiles(files) {
           e.preventDefault();
         });
       });
-      document.querySelectorAll('.split-out-name').forEach(inp => {
-        inp.addEventListener('input', saveSplitState);
-      });
+
       document.querySelectorAll('.merge-file-item .del-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2121,48 +2117,131 @@ async function handleSplitFiles(files) {
       btnSplit.disabled = true;
       btnSplit.textContent = '生成中...';
       try {
+        const JSZip = window.JSZip;
+        if (!JSZip) { showToast('JSZip 库加载失败', 'error'); return; }
         const outFiles = [];
+
+        // 按源文件分组，每个文件只加载一次 ZIP
+        const groups = {};
         for (const cb of sheetCbs) {
           const fi = parseInt(cb.dataset.fileIndex);
-          const sName = cb.dataset.sheet;
-          const item = splitFiles[fi];
-          if (!item) continue;
-          const nameInput = cb.closest('.merge-sheet-item').querySelector('.split-out-name');
-          const outName = nameInput ? nameInput.value.trim() : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName + '.xlsx');
-          const finalName = outName.endsWith('.xlsx') ? outName : outName + '.xlsx';
-          const wb = XLSX.read(new Uint8Array(item._data).buffer, { type: 'array', cellStyles: true });
-          const others = wb.SheetNames.filter(n => n !== sName);
-          others.forEach(n => { delete wb.Sheets[n]; const idx = wb.SheetNames.indexOf(n); if (idx > -1) wb.SheetNames.splice(idx, 1); });
-          const outData = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-          outFiles.push({ name: finalName, data: new Uint8Array(outData) });
+          if (!groups[fi]) groups[fi] = [];
+          groups[fi].push(cb);
         }
 
-        if (folderHandle) {
-          btnSplit.textContent = '写入文件夹...';
-          const written = await writeFilesToFolder(outFiles);
-          showToast('拆分完成！共 ' + written.length + ' 个文件，已保存到 ' + folderHandle.name, 'success');
-        } else {
-          const JSZip = window.JSZip;
-          if (!JSZip) {
-            showToast('JSZip 库加载失败，请刷新页面', 'error');
-            return;
+        for (const [fiStr, cbs] of Object.entries(groups)) {
+          const fi = parseInt(fiStr);
+          const item = splitFiles[fi];
+          if (!item) continue;
+
+          // 加载 ZIP 一次
+          const origZip = await JSZip.loadAsync(item._data);
+          const parser = new DOMParser();
+          const serializer = new XMLSerializer();
+
+          // 解析 XML 一次
+          const wbDoc = parser.parseFromString(await origZip.file('xl/workbook.xml').async('string'), 'text/xml');
+          const wbRelsXml = origZip.file('xl/_rels/workbook.xml.rels')
+            ? await origZip.file('xl/_rels/workbook.xml.rels').async('string')
+            : '';
+          const relsDoc = wbRelsXml ? parser.parseFromString(wbRelsXml, 'text/xml') : null;
+          const ctDoc = parser.parseFromString(await origZip.file('[Content_Types].xml').async('string'), 'text/xml');
+
+          // 构建 sheet 信息映射
+          const sheets = wbDoc.querySelectorAll('sheet');
+          const sheetInfo = {};
+          for (const s of sheets) {
+            const name = s.getAttribute('name');
+            const rId = s.getAttribute('r:id') || s.getAttribute('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id');
+            const sId = s.getAttribute('sheetId');
+            let path = 'xl/worksheets/sheet' + sId + '.xml';
+            if (relsDoc) {
+              const rels = relsDoc.querySelectorAll('Relationship');
+              for (const r of rels) {
+                if (r.getAttribute('Id') === rId) {
+                  path = 'xl/' + r.getAttribute('Target');
+                  break;
+                }
+              }
+            }
+            sheetInfo[name] = { rId, sheetId: sId, targetPath: path };
           }
-          btnSplit.textContent = '打包中...';
-          const zip = new JSZip();
-          const folder = zip.folder(getOutFolder());
-          outFiles.forEach(f => folder.file(f.name, f.data));
-          const zipData = await zip.generateAsync({ type: 'uint8array' });
-          const blob = new Blob([zipData], { type: 'application/zip' });
+
+          // 并行处理该文件下的所有勾选的工作表
+          const results = await Promise.all(cbs.map(async (cb) => {
+            const sName = cb.dataset.sheet;
+            const info = sheetInfo[sName];
+            if (!info) return null;
+            const { targetPath } = info;
+            const relsDir = targetPath.replace(/\.xml$/, '.xml.rels');
+
+            const keepFiles = new Set();
+            keepFiles.add(targetPath);
+            if (origZip.file(relsDir)) keepFiles.add(relsDir);
+
+            for (const path of Object.keys(origZip.files)) {
+              const f = origZip.files[path];
+              if (f.dir) continue;
+              if (path === 'xl/workbook.xml') continue;
+              if (path.startsWith('xl/worksheets/') && path !== targetPath) continue;
+              if (path.startsWith('xl/worksheets/_rels/') && path !== relsDir) continue;
+              keepFiles.add(path);
+            }
+
+            const newZip = new JSZip();
+            const copyTasks = [];
+            for (const path of keepFiles) {
+              const content = origZip.files[path];
+              if (content.dir) continue;
+              copyTasks.push(content.async('uint8array').then(data => { newZip.file(path, data); }));
+            }
+            await Promise.all(copyTasks);
+
+            const newWbDoc = wbDoc.cloneNode(true);
+            const sheetList = newWbDoc.querySelector('sheets');
+            if (sheetList) {
+              const allSheets = sheetList.querySelectorAll('sheet');
+              for (const s of allSheets) {
+                if (s.getAttribute('name') !== sName) s.remove();
+              }
+            }
+            newZip.file('xl/workbook.xml', serializer.serializeToString(newWbDoc));
+
+            const newCtDoc = ctDoc.cloneNode(true);
+            const allOverrides = newCtDoc.querySelectorAll('Override');
+            for (const ov of allOverrides) {
+              const pn = ov.getAttribute('PartName');
+              if (pn && pn.startsWith('/xl/worksheets/') && pn !== '/' + targetPath.replace(/\\/g, '/')) {
+                ov.remove();
+              }
+            }
+            newZip.file('[Content_Types].xml', serializer.serializeToString(newCtDoc));
+
+            const nameInput = cb.closest('.merge-sheet-item').querySelector('.split-out-name');
+            const outNameRaw = nameInput ? nameInput.value.trim() : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
+            const outName = outNameRaw.endsWith('.xlsx') ? outNameRaw : outNameRaw + '.xlsx';
+            const outData = await newZip.generateAsync({ type: 'uint8array' });
+            return { name: outName, data: outData };
+          }));
+
+          for (const r of results) {
+            if (r) outFiles.push(r);
+          }
+        }
+
+        btnSplit.textContent = '下载中...';
+        for (const f of outFiles) {
+          const blob = new Blob([f.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = getOutFolder() + '.zip';
+          a.download = f.name;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           setTimeout(() => URL.revokeObjectURL(url), 10000);
-          showToast('拆分完成！共 ' + outFiles.length + ' 个文件，已打包为 ' + getOutFolder() + '.zip', 'success');
         }
+        showToast('拆分完成！共 ' + outFiles.length + ' 个文件已下载', 'success');
       } catch (e) {
         showToast('拆分失败：' + e.message, 'error');
       } finally {
@@ -2216,12 +2295,10 @@ async function handleMergeFiles(files) {
         + '<label style="font-size:12px;color:#555;"><input type="checkbox" id="selectAllMerge" checked> 全选</label>'
         + '</div>';
       mergeFiles.forEach((item, i) => {
-        const sheets = item.wb.SheetNames.join(', ');
         html += '<div class="merge-file-item" draggable="true" data-index="' + i + '">'
           + '<input type="checkbox" class="merge-cb" data-index="' + i + '" checked>'
           + '<span class="file-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg></span>'
           + '<span class="file-name">' + item.file.name + '</span>'
-          + '<span class="file-sheets">' + sheets + '</span>'
           + '<button class="merge-expand-btn" data-index="' + i + '" title="展开工作表">&#9654;</button>'
           + '<span class="file-actions">'
           + '<button class="del-btn" data-index="' + i + '" title="删除">✕</button>'
@@ -2235,7 +2312,7 @@ async function handleMergeFiles(files) {
           html += '<div class="merge-sheet-item" style="flex-wrap:wrap;gap:4px;">'
             + '<input type="checkbox" class="merge-sheet-cb" data-file-index="' + i + '" data-sheet-index="' + si + '" data-sheet="' + sName.replace(/"/g, '&quot;') + '" ' + (checked ? 'checked' : '') + '>'
             + '<span style="font-size:12px;min-width:60px;">' + sName + '</span>'
-            + '<input type="text" class="merge-sheet-name" value="' + defaultName.replace(/"/g, '&quot;') + '" style="flex:1;min-width:120px;padding:2px 6px;border:1px solid #d0d5dd;border-radius:3px;font-size:11px;outline:none;">'
+            + '<input type="text" class="merge-sheet-name" maxlength="31" value="' + defaultName.replace(/"/g, '&quot;') + '" style="flex:1;min-width:120px;padding:2px 6px;border:1px solid #d0d5dd;border-radius:3px;font-size:11px;outline:none;">'
             + '</div>';
         });
         html += '</div>';
@@ -2248,16 +2325,16 @@ async function handleMergeFiles(files) {
         document.querySelectorAll('.merge-cb').forEach(cb => cb.checked = this.checked);
       });
 
-      // 展开/收起
-      document.querySelectorAll('.merge-expand-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const i = parseInt(btn.dataset.index);
-          const list = document.querySelector('.merge-sheet-list[data-file-index="' + i + '"]');
-          if (list) {
-            list.classList.toggle('open');
-            btn.classList.toggle('open');
-          }
-        });
+      // 展开/收起（事件委托）
+      mergeFileListEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.merge-expand-btn');
+        if (!btn) return;
+        const i = btn.dataset.index;
+        const list = mergeFileListEl.querySelector('.merge-sheet-list[data-file-index="' + i + '"]');
+        if (list) {
+          list.classList.toggle('open');
+          btn.classList.toggle('open');
+        }
       });
 
       const mergeSheetAnchors = {};
@@ -2278,7 +2355,7 @@ async function handleMergeFiles(files) {
             mergeSheetAnchors[fi] = idx;
           } else {
             e.preventDefault();
-            cbs.forEach((c, i) => c.checked = i === idx && !cur);
+            cbs[idx].checked = !cur;
             mergeSheetAnchors[fi] = idx;
           }
           saveMergeState();
@@ -2353,6 +2430,9 @@ async function handleMergeFiles(files) {
       btnMerge.disabled = true;
       btnMerge.textContent = '合并中...';
       try {
+        function sanitizeSheetName(name) {
+          return name.replace(/[\[\]\*\?:\\\/]/g, '').substring(0, 31);
+        }
         let mergedWB;
         for (const cb of sheetCbs) {
           const fileIdx = parseInt(cb.dataset.fileIndex);
@@ -2360,12 +2440,18 @@ async function handleMergeFiles(files) {
           const item = mergeFiles[fileIdx];
           if (!item) continue;
           const nameInput = cb.closest('.merge-sheet-item').querySelector('.merge-sheet-name');
-          const newName = nameInput ? nameInput.value.trim() || (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName) : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
+          let newName = nameInput ? nameInput.value.trim() || (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName) : (item.file.name.replace(/\.(xlsx|xls)$/i, '') + '_' + sName);
+          if (newName.length > 31) {
+            showToast('工作表名「' + newName + '」已截断至 31 字符', 'warning');
+          }
+          newName = sanitizeSheetName(newName);
           if (!mergedWB) {
             mergedWB = XLSX.read(new Uint8Array(item._data).buffer, { type: 'array', cellStyles: true });
             const others = mergedWB.SheetNames.filter(n => n !== sName);
             others.forEach(n => { delete mergedWB.Sheets[n]; const idx = mergedWB.SheetNames.indexOf(n); if (idx > -1) mergedWB.SheetNames.splice(idx, 1); });
             if (mergedWB.SheetNames[0] !== newName) {
+              mergedWB.Sheets[newName] = mergedWB.Sheets[mergedWB.SheetNames[0]];
+              delete mergedWB.Sheets[mergedWB.SheetNames[0]];
               mergedWB.SheetNames[0] = newName;
             }
           } else {
@@ -2373,8 +2459,8 @@ async function handleMergeFiles(files) {
             const others = swb.SheetNames.filter(n => n !== sName);
             others.forEach(n => { delete swb.Sheets[n]; const idx = swb.SheetNames.indexOf(n); if (idx > -1) swb.SheetNames.splice(idx, 1); });
             if (swb.SheetNames.length > 0) {
+              const ws = swb.Sheets[swb.SheetNames[0]];
               swb.SheetNames[0] = newName;
-              const ws = swb.Sheets[newName];
               XLSX.utils.book_append_sheet(mergedWB, ws, newName);
             }
           }
